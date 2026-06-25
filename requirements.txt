@@ -1,0 +1,9 @@
+pika
+yfinance
+pandas
+scikit-learn
+numpy
+fastapi
+uvicorn
+websockets
+aio-pika

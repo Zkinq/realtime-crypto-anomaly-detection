@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Bitcoin Anomaly Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            background-color: #ffeeba;
+            color: #856404;
+        }
+        .status-connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .dashboard-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .anomaly-log {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #e1e4e8;
+            border-radius: 4px;
+            padding: 10px;
+            background: #1e1e1e; /* Darker background for crypto feel */
+            color: #fff;
+        }
+        .anomaly-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            border-left: 4px solid #ff4757;
+            background-color: #2f3542;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+        }
+        .highlight-price {
+            color: #ff4757;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Real-Time Bitcoin (BTC) Anomaly Detector</h1>
+        <div id="connectionStatus" class="status-badge status-disconnected">Connecting to Data Stream...</div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="card">
+            <canvas id="realTimeChart" height="120"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Live Alert Console</h3>
+            <div id="anomalyLogContainer" class="anomaly-log">
+                </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Utility function to format numbers as USD currency
+    const formatCurrency = (value) => {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+    };
+
+    // 1. Initialize Chart.js configuration
+    const ctx = document.getElementById('realTimeChart').getContext('2d');
+    
+    const chartData = {
+        labels: [], 
+        datasets: [{
+            label: 'BTC-USD Price',
+            data: [], 
+            borderColor: '#f7931a', // Bitcoin Orange
+            backgroundColor: 'rgba(247, 147, 26, 0.1)',
+            borderWidth: 2,
+            pointRadius: 4,
+            pointBackgroundColor: [], 
+            pointBorderColor: [],
+            tension: 0.1 // Harder angles for crypto charts
+        }]
+    };
+
+    const config = {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return formatCurrency(context.parsed.y);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { display: true },
+                y: { 
+                    display: true, 
+                    ticks: {
+                        callback: function(value) {
+                            return formatCurrency(value);
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    const realTimeChart = new Chart(ctx, config);
+
+    // 2. Establish WebSocket Connection to FastAPI Server
+    const socket = new WebSocket('ws://127.0.0.1:8000/ws');
+    const statusBadge = document.getElementById('connectionStatus');
+    const anomalyLogContainer = document.getElementById('anomalyLogContainer');
+
+    socket.onopen = () => {
+        statusBadge.textContent = 'Live Connected';
+        statusBadge.className = 'status-badge status-connected';
+    };
+
+    socket.onclose = () => {
+        statusBadge.textContent = 'Disconnected / Offline';
+        statusBadge.className = 'status-badge status-disconnected';
+    };
+
+    // 3. Handle incoming live data messages
+    socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        
+        const timestamp = payload.timestamp;
+        const price = payload.price;
+        const isAnomaly = payload.is_anomaly;
+
+        // Maintain a maximum of 50 data points on the screen
+        if (chartData.labels.length >= 50) {
+            chartData.labels.shift();
+            chartData.datasets[0].data.shift();
+            chartData.datasets[0].pointBackgroundColor.shift();
+            chartData.datasets[0].pointBorderColor.shift();
+        }
+
+        // Push new incoming stream data
+        chartData.labels.push(timestamp);
+        chartData.datasets[0].data.push(price);
+
+        // Color coding logic
+        if (isAnomaly) {
+            chartData.datasets[0].pointBackgroundColor.push('#ff4757'); // Red for anomaly
+            chartData.datasets[0].pointBorderColor.push('#ff4757');
+            
+            logAnomaly(timestamp, price, payload.volume);
+        } else {
+            chartData.datasets[0].pointBackgroundColor.push('#f7931a'); // Orange for normal BTC
+            chartData.datasets[0].pointBorderColor.push('#f7931a');
+        }
+
+        realTimeChart.update();
+    };
+
+    // Helper function to append anomaly details to the log container
+    function logAnomaly(time, price, volume) {
+        const item = document.createElement('div');
+        item.className = 'anomaly-item';
+        
+        const formattedPrice = formatCurrency(price);
+        
+        item.innerHTML = `[CRITICAL] Spike Detected at ${time} <br> 
+                          >> Price: <span class="highlight-price">${formattedPrice}</span> | Vol: ${volume}`;
+        
+        // Prepend so the freshest alerts stay at the top
+        anomalyLogContainer.insertBefore(item, anomalyLogContainer.firstChild);
+    }
+</script>
+</body>
+</html>
