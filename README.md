@@ -33,6 +33,24 @@ Since the entire ecosystem is orchestrated via Docker, you can spin up the full 
 ### Prerequisites
 Make sure you have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running on your machine.
 
+## 📂 Project Structure
+
+├── Dockerfile # Setup for Python environments and dependencies
+
+├── docker-compose.yml # Orchestration config for RabbitMQ, Producer, Consumer, Server
+
+├── requirements.txt # Python external library specifications
+
+├── producer.py # Financial data live ingestion script
+
+├── consumer.py # Isolation Forest ML algorithm processing script
+
+├── server.py # FastAPI application maintaining WebSocket tunnels
+
+└── index.html # High-performance UI rendering Chart.js logic
+
+
+
 ### Execution
 1. Clone this repository and navigate to the project directory:
    ```bash
