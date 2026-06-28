@@ -1,40 +1,34 @@
 version: '3.8'
-
 services:
-  # 1. Our Messaging Infrastructure
   rabbitmq:
     image: rabbitmq:3-management
     ports:
       - "5672:5672"
       - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
-  # 2. (Producer)
   producer:
     build: .
     command: python producer.py
+    environment:
+      - PYTHONUNBUFFERED=1    # <--- BUNU EKLİYORUZ (Logları anında gösterir)
     depends_on:
-      rabbitmq:
-        condition: service_healthy # RabbitMQ tam açılmadan veri üretmeye başlama
+      - rabbitmq
+    restart: always
 
-  # 3.  (Consumer)
   consumer:
     build: .
     command: python consumer.py
+    environment:
+      - PYTHONUNBUFFERED=1    # <--- BUNU EKLİYORUZ
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      - rabbitmq
+    restart: always   
 
-  # 4.  (FastAPI)
   server:
     build: .
-    command: uvicorn server:app --host 0.0.0.0 --port 8000
+    command: python server.py
     ports:
       - "8000:8000"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      - rabbitmq
+    restart: always   
