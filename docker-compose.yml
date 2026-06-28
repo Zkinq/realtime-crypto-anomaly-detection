@@ -10,7 +10,7 @@ services:
     build: .
     command: python producer.py
     environment:
-      - PYTHONUNBUFFERED=1    # <--- BUNU EKLİYORUZ (Logları anında gösterir)
+      - PYTHONUNBUFFERED=1   
     depends_on:
       - rabbitmq
     restart: always
@@ -19,7 +19,7 @@ services:
     build: .
     command: python consumer.py
     environment:
-      - PYTHONUNBUFFERED=1    # <--- BUNU EKLİYORUZ
+      - PYTHONUNBUFFERED=1    
     depends_on:
       - rabbitmq
     restart: always   

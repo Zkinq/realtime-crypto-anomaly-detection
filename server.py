@@ -6,18 +6,18 @@ import aio_pika
 
 connected_clients = set()
 
-# Arka plan dinleyici görevimiz
+# Background consumer task
 async def consume_rabbitmq():
     while True:
         try:
-            print(" [*] Server RabbitMQ'ya bağlanıyor...", flush=True)
+            print(" [*] Server connecting to RabbitMQ...", flush=True)
             
-            # MÜDAHALE 1: ?heartbeat=0 ile RabbitMQ'nun fişi çekmesini yasakladık.
-            # MÜDAHALE 2: connect_robust yerine connect kullandık. Koparsa arka planda zombi olmak yerine çöksün ve döngümüz onu yeniden diriltsin!
+            # INTERVENTION 1: Prevented RabbitMQ from dropping the connection by setting heartbeat=0.
+            # INTERVENTION 2: Used connect instead of connect_robust. If it drops, it will fail loudly and let our loop restart it cleanly instead of becoming a background zombie!
             connection = await aio_pika.connect("amqp://guest:guest@rabbitmq/?heartbeat=0")
             
             async with connection:
-                print(" [+] Server RabbitMQ'ya BAĞLANDI ve Veri Bekliyor!", flush=True)
+                print(" [+] Server CONNECTED to RabbitMQ and waiting for data!", flush=True)
                 channel = await connection.channel()
                 queue = await channel.declare_queue("dashboard_queue")
                 
@@ -26,8 +26,8 @@ async def consume_rabbitmq():
                         async with message.process():
                             data = message.body.decode()
                             
-                            # Eğer terminal çok kalabalık oluyorsa bu print'i silebilirsin
-                            print(f" [->] Veri iletiliyor: {json.loads(data)['symbol']}", flush=True)
+                            # You can delete this print statement if the terminal becomes too cluttered
+                            print(f" [->] Forwarding data: {json.loads(data)['symbol']}", flush=True)
                             
                             for client in list(connected_clients):
                                 try:
@@ -36,8 +36,8 @@ async def consume_rabbitmq():
                                     connected_clients.discard(client)
                                     
         except Exception as e:
-            # Sistem zombi olmak yerine hatayı buraya düşürür ve 3 saniye sonra TERTEMİZ baştan başlar.
-            print(f" [-] RabbitMQ bağlantısı koptu (Hata: {e}). 3 sn içinde onarılıyor...", flush=True)
+            # Instead of becoming a zombie, the system catches the exception here and restarts CLEANLY after 3 seconds.
+            print(f" [-] RabbitMQ connection lost (Error: {e}). Reconnecting in 3 seconds...", flush=True)
             await asyncio.sleep(3)
 
 @asynccontextmanager
@@ -52,20 +52,20 @@ app = FastAPI(lifespan=lifespan)
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
-    print(f" [+] Tarayıcı bağlandı! Aktif izleyici: {len(connected_clients)}", flush=True)
+    print(f" [+] Browser connected! Active clients: {len(connected_clients)}", flush=True)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        # MÜDAHALE 3: Tarayıcı sayfayı yenilediğinde "unexpected EOF" fırlatmasını engelledik.
+        # INTERVENTION 3: Prevented "unexpected EOF" errors when the browser refreshes the page.
         connected_clients.discard(websocket)
-        print(" [-] Tarayıcı ayrıldı veya sayfa yenilendi.", flush=True)
-    except Exception as e:
+        print(" [-] Browser disconnected or page refreshed.", flush=True)
+    except Exception:
         connected_clients.discard(websocket)
-        print(f" [-] Tarayıcı ağ hatası.", flush=True)
+        print(" [-] Browser network error.", flush=True)
 
 if __name__ == "__main__":
     import uvicorn
     print(" [*] Web Server is starting... Port: 8000", flush=True)
-    # MÜDAHALE 4: Tarayıcı ile olan WebSocket kopmalarını engellemek için ping süresini uzattık.
+    # INTERVENTION 4: Extended ping interval to prevent WebSocket disconnections with the browser.
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_interval=60, ws_ping_timeout=60)

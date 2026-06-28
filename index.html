@@ -137,11 +137,11 @@
         
         let currentSymbol = coinSelector.value;
 
-        // 🧠 YENİ SİSTEM: Tüm coinlerin geçmişini arka planda tutan dev hafıza
+        // 🧠 MEMORY MANAGEMENT: Global state caching ticker history in the background
         const TICKERS = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'SOL-USD', 'ADA-USD', 'USDT-USD'];
         const chartMemory = {};
         
-        // Her coin için boş bir geçmiş listesi oluşturuyoruz
+        // Initialize an empty structure for each crypto asset
         TICKERS.forEach(ticker => {
             chartMemory[ticker] = { labels: [], data: [], colors: [], logs: [] };
         });
@@ -184,17 +184,17 @@
             }
         });
 
-        // KULLANICI COIN DEĞİŞTİRDİĞİNDE ÇALIŞAN KOD
+        // TRIGGERED ON COIN SWITCH
         coinSelector.addEventListener('change', (e) => {
             currentSymbol = e.target.value;
             
-            // 1. Yeni seçilen coinin hafızadaki geçmişini doğrudan grafiğe yükle
+            // 1. Hot-swap and hydrate chart datasets directly from cached memory
             priceChart.data.labels = [...chartMemory[currentSymbol].labels];
             priceChart.data.datasets[0].data = [...chartMemory[currentSymbol].data];
             priceChart.data.datasets[0].pointBackgroundColor = [...chartMemory[currentSymbol].colors];
             priceChart.update();
             
-            // 2. Büyük fiyat etiketini, hafızadaki son fiyata göre güncelle
+            // 2. Synchronize main price indicator with the last registered value in memory
             const len = chartMemory[currentSymbol].data.length;
             if (len > 0) {
                 const lastPrice = chartMemory[currentSymbol].data[len - 1];
@@ -206,7 +206,7 @@
                 topPriceDisplay.style.color = '#E2E8F0';
             }
 
-            // 3. Logları temizle (İstersen logları da hafızada tutabiliriz ama temizlemek daha şık duruyor)
+            // 3. Clear logs (Logs can be persistent via chartMemory, but clearing provides a cleaner transition)
             logContainer.innerHTML = '';
         });
 
@@ -222,12 +222,12 @@
             connectionStatus.className = 'status disconnected';
         };
 
-        // SUNUCUDAN YENİ VERİ GELDİĞİNDE ÇALIŞAN KOD
+        // STREAM INGESTION HANDLER
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             const sym = data.symbol;
             
-            // Bilinmeyen bir sembol gelirse yoksay
+            // Discard incoming payloads if ticker is unrecognized
             if(!chartMemory[sym]) return;
 
             const time = data.timestamp;
@@ -235,30 +235,30 @@
             const isAnomaly = data.is_anomaly;
             const color = isAnomaly ? '#EF4444' : '#10B981';
 
-            // ADIM 1: Gelen veriyi her halükarda ARKA PLAN HAFIZASINA yaz (Ekranda görünmese bile!)
+            // STEP 1: Commit data to background memory ledger regardless of active view state
             chartMemory[sym].labels.push(time);
             chartMemory[sym].data.push(price);
             chartMemory[sym].colors.push(color);
 
-            // Hafızayı en fazla 40 veri ile sınırla (Tarayıcı çökmesin diye)
+            // Enforce sliding window constraint (max 40 items) to guard against heap bloat
             if (chartMemory[sym].labels.length > 40) {
                 chartMemory[sym].labels.shift();
                 chartMemory[sym].data.shift();
                 chartMemory[sym].colors.shift();
             }
 
-            // ADIM 2: Eğer gelen veri, ŞU AN EKRANDA SEÇİLİ OLAN coin ise grafiği anında güncelle!
+            // STEP 2: Render immediately if incoming packet corresponds to the active layout view
             if(sym === currentSymbol) {
                 topPriceDisplay.textContent = `$${price.toLocaleString()}`;
                 topPriceDisplay.style.color = color;
 
-                // Grafiği hafızadan güncelliyoruz
+                // Refresh viewport dataset from updated memory state
                 priceChart.data.labels = [...chartMemory[sym].labels];
                 priceChart.data.datasets[0].data = [...chartMemory[sym].data];
                 priceChart.data.datasets[0].pointBackgroundColor = [...chartMemory[sym].colors];
                 priceChart.update();
 
-                // Log Ekleme İşlemi
+                // Alert dispatch handling
                 if (isAnomaly) {
                     const logEntry = document.createElement('div');
                     logEntry.className = `log-item anomaly`;
