@@ -119,12 +119,14 @@ def get_historical_anomalies(symbol: str, date: str, start_time: str, end_time: 
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
+    
     try:
         for history in recent_history.values():
             for cached_msg in history:
                 await websocket.send_text(cached_msg)
-    	except Exception as e:
-        	print(f"Cache gönderme hatası: {e}")
+    except Exception as e:
+        print(f"Cache gönderme hatası: {e}")
+        
     try:
         while True:
             await websocket.receive_text()
