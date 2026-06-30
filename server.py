@@ -7,8 +7,10 @@ from contextlib import asynccontextmanager
 import aio_pika
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from collections import deque
 
 connected_clients = set()
+recent_history = {}
 
 # ========================================================
 # 1. DATABASE SETUP
@@ -43,6 +45,14 @@ async def consume_rabbitmq():
                             data = message.body.decode()
                             data_dict = json.loads(data)
                             
+                            # --- YENİ EKLENEN KISIM: Veriyi hafızaya al ---
+                            sym = data_dict['symbol']
+                            if sym not in recent_history:
+                                # Create a queue the same size as the 40 limit on the frontend.
+                                recent_history[sym] = deque(maxlen=40) 
+                            # Add the raw JSON string (data) directly to the queue.
+                            recent_history[sym].append(data)
+  
                             # ========================================================
                             # 2. PERSIST DETECTED ANOMALIES TO DATABASE
                             # ========================================================
@@ -109,6 +119,12 @@ def get_historical_anomalies(symbol: str, date: str, start_time: str, end_time: 
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
+    try:
+        for history in recent_history.values():
+            for cached_msg in history:
+                await websocket.send_text(cached_msg)
+    	except Exception as e:
+        	print(f"Cache gönderme hatası: {e}")
     try:
         while True:
             await websocket.receive_text()
