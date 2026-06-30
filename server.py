@@ -101,7 +101,6 @@ def get_historical_anomalies(symbol: str, date: str, start_time: str, end_time: 
     start_datetime = f"{date} {start_time}:00"
     end_datetime = f"{date} {end_time}:59"
     
-    # Execute SQL Query: Filter logs by selected asset symbol and target time slice
     cursor.execute('''
         SELECT symbol, price, timestamp 
         FROM anomalies 
@@ -125,7 +124,7 @@ async def websocket_endpoint(websocket: WebSocket):
             for cached_msg in history:
                 await websocket.send_text(cached_msg)
     except Exception as e:
-        print(f"Cache gönderme hatası: {e}")
+        print(f"Cache sending fault: {e}")
         
     try:
         while True:
