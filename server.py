@@ -6,6 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from contextlib import asynccontextmanager
 import aio_pika
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 connected_clients = set()
 
@@ -113,6 +114,10 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         connected_clients.discard(websocket)
+
+@app.get("/")
+def serve_dashboard():
+    return FileResponse("index.html")
 
 if __name__ == "__main__":
     import uvicorn

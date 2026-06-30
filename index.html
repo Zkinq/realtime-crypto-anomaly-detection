@@ -255,7 +255,10 @@
             logContainer.innerHTML = '';
         });
 
-        const ws = new WebSocket('ws://localhost:8000/ws');
+        
+	const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+
 
         ws.onopen = () => {
             connectionStatus.textContent = '● LIVE STREAM';
@@ -337,7 +340,7 @@
             resultBox.innerHTML = '<p style="text-align:center; color: var(--accent-blue); margin-top: 80px; font-weight: bold;">Querying database...</p>';
 
             try {
-                const response = await fetch(`http://localhost:8000/api/anomalies?symbol=${sym}&date=${date}&start_time=${start}&end_time=${end}`);
+                const response = await fetch(`/api/anomalies?symbol=${sym}&date=${date}&start_time=${start}&end_time=${end}`);
                 const anomalies = await response.json();
 
                 resultBox.innerHTML = ''; // Clear display viewport

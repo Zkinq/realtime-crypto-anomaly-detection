@@ -31,4 +31,6 @@ services:
       - "8000:8000"
     depends_on:
       - rabbitmq
-    restart: always   
+    restart: always
+    volumes:
+      - ./veritabani:/app  
