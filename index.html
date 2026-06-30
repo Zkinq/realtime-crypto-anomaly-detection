@@ -55,7 +55,7 @@
         .status.disconnected { background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.3); }
         .status.connected { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
 
-        .grid-container { display: grid; grid-template-columns: 3fr 1fr; gap: 25px; }
+        .grid-container { display: grid; grid-template-columns: 3fr 1fr; gap: 25px; margin-bottom: 25px; }
 
         .card { 
             background-color: var(--bg-card); border-radius: 16px; 
@@ -91,13 +91,28 @@
             70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
+
+        /* Input Form Layouts */
+        input[type="date"], input[type="time"] { 
+            background-color: #1E293B; color: white; padding: 10px 15px; 
+            border-radius: 8px; border: 1px solid #334155; outline: none; 
+            font-family: 'Inter', sans-serif; font-size: 14px;
+        }
+        input[type="date"]:focus, input[type="time"]:focus { border-color: var(--accent-blue); }
+        
+        .db-btn {
+            background-color: var(--accent-blue); color: white; padding: 10px 25px;
+            border: none; border-radius: 8px; font-weight: 700; cursor: pointer;
+            transition: 0.3s; font-family: 'Inter', sans-serif;
+        }
+        .db-btn:hover { background-color: #2563EB; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
     </style>
 </head>
 <body>
 
     <div class="dashboard">
         <div class="header">
-            <h2>⚡ AI Pulse Terminal</h2>
+            <h2>🥮 Coin Anomaly Detector</h2>
             <div class="controls">
                 <select id="coinSelector">
                     <option value="BTC-USD">Bitcoin (BTC)</option>
@@ -123,7 +138,37 @@
             <div class="card">
                 <h3 style="margin-top:0; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">System Alerts</h3>
                 <div class="log-container" id="logContainer">
-                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+                🔍 Historical Anomaly Lookup (Database)
+            </h3>
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 25px; align-items: center; flex-wrap: wrap; margin-top: 20px;">
+                <select id="dbSymbol" style="padding-right: 30px;">
+                    <option value="BTC-USD">Bitcoin (BTC)</option>
+                    <option value="ETH-USD">Ethereum (ETH)</option>
+                    <option value="BNB-USD">Binance (BNB)</option>
+                    <option value="SOL-USD">Solana (SOL)</option>
+                    <option value="ADA-USD">Cardano (ADA)</option>
+                    <option value="USDT-USD">Tether (USDT)</option>
+                </select>
+                
+                <input type="date" id="dbDate" required>
+                <input type="time" id="dbStartTime" required>
+                <span style="color: var(--text-muted); font-weight: bold;">—</span>
+                <input type="time" id="dbEndTime" required>
+                
+                <button class="db-btn" onclick="fetchHistoricalAnomalies()">Query</button>
+            </div>
+
+            <div id="dbResults" class="log-container" style="height: 250px; background: rgba(0,0,0,0.15); padding: 15px; border-radius: 12px; border: 1px dashed #334155;">
+                <p style="color: var(--text-muted); text-align: center; margin-top: 80px; font-style: italic;">
+                    Select an asset, date, and time range above to query historical logs.
+                </p>
             </div>
         </div>
     </div>
@@ -206,7 +251,7 @@
                 topPriceDisplay.style.color = '#E2E8F0';
             }
 
-            // 3. Clear logs (Logs can be persistent via chartMemory, but clearing provides a cleaner transition)
+            // 3. Clear logs 
             logContainer.innerHTML = '';
         });
 
@@ -273,6 +318,52 @@
                 }
             }
         };
+
+        // =========================================================
+        // HISTORICAL DATABASE QUERY LOGIC
+        // =========================================================
+        async function fetchHistoricalAnomalies() {
+            const sym = document.getElementById('dbSymbol').value;
+            const date = document.getElementById('dbDate').value;
+            const start = document.getElementById('dbStartTime').value;
+            const end = document.getElementById('dbEndTime').value;
+            const resultBox = document.getElementById('dbResults');
+
+            if (!date || !start || !end) {
+                alert("Please fill out Date, Start Time, and End Time completely.");
+                return;
+            }
+
+            resultBox.innerHTML = '<p style="text-align:center; color: var(--accent-blue); margin-top: 80px; font-weight: bold;">Querying database...</p>';
+
+            try {
+                const response = await fetch(`http://localhost:8000/api/anomalies?symbol=${sym}&date=${date}&start_time=${start}&end_time=${end}`);
+                const anomalies = await response.json();
+
+                resultBox.innerHTML = ''; // Clear display viewport
+
+                if (anomalies.length === 0) {
+                    resultBox.innerHTML = `<p style="text-align:center; color: var(--text-muted); margin-top: 80px;">No recorded anomalies detected for ${sym} on ${date} between ${start} and ${end}.</p>`;
+                    return;
+                }
+
+                // Render data entries to screen matching current application log layout styles
+                anomalies.forEach(data => {
+                    const logEntry = document.createElement('div');
+                    logEntry.className = 'log-item anomaly';
+                    logEntry.innerHTML = `
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">⚠️ ${data.symbol} ANOMALY DETECTED</div>
+                            <div class="time">${data.timestamp}</div>
+                        </div>
+                        <div class="price-tag" style="font-family: monospace; font-size: 15px;">$${data.price.toLocaleString()}</div>
+                    `;
+                    resultBox.appendChild(logEntry);
+                });
+            } catch (err) {
+                resultBox.innerHTML = `<p style="text-align:center; color: var(--accent-red); margin-top: 80px;">Failed to connect to the database! Is the backend server running?</p>`;
+            }
+        }
     </script>
 </body>
 </html>

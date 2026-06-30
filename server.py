@@ -1,23 +1,38 @@
 import json
 import asyncio
+import sqlite3
+from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from contextlib import asynccontextmanager
 import aio_pika
+from fastapi.middleware.cors import CORSMiddleware
 
 connected_clients = set()
 
-# Background consumer task
+# ========================================================
+# 1. DATABASE SETUP
+# ========================================================
+# Initialize sqlite3 database connection and build schema if missing
+conn = sqlite3.connect('anomalies.db', check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS anomalies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT,
+        price REAL,
+        timestamp TEXT
+    )
+''')
+conn.commit()
+
 async def consume_rabbitmq():
     while True:
         try:
             print(" [*] Server connecting to RabbitMQ...", flush=True)
-            
-            # INTERVENTION 1: Prevented RabbitMQ from dropping the connection by setting heartbeat=0.
-            # INTERVENTION 2: Used connect instead of connect_robust. If it drops, it will fail loudly and let our loop restart it cleanly instead of becoming a background zombie!
             connection = await aio_pika.connect("amqp://guest:guest@rabbitmq/?heartbeat=0")
             
             async with connection:
-                print(" [+] Server CONNECTED to RabbitMQ and waiting for data!", flush=True)
+                print(" [+] Server CONNECTED to RabbitMQ successfully!", flush=True)
                 channel = await connection.channel()
                 queue = await channel.declare_queue("dashboard_queue")
                 
@@ -25,19 +40,29 @@ async def consume_rabbitmq():
                     async for message in queue_iter:
                         async with message.process():
                             data = message.body.decode()
+                            data_dict = json.loads(data)
                             
-                            # You can delete this print statement if the terminal becomes too cluttered
-                            print(f" [->] Forwarding data: {json.loads(data)['symbol']}", flush=True)
+                            # ========================================================
+                            # 2. PERSIST DETECTED ANOMALIES TO DATABASE
+                            # ========================================================
+                            if data_dict.get("is_anomaly"):
+                                # Capture the precise current datetime string for record logging
+                                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                cursor.execute(
+                                    "INSERT INTO anomalies (symbol, price, timestamp) VALUES (?, ?, ?)", 
+                                    (data_dict['symbol'], data_dict['price'], now_str)
+                                )
+                                conn.commit()
                             
+                            # Broadcast real-time stream via active WebSocket clients
                             for client in list(connected_clients):
                                 try:
                                     await client.send_text(data)
-                                except Exception:
+                                except:
                                     connected_clients.discard(client)
                                     
         except Exception as e:
-            # Instead of becoming a zombie, the system catches the exception here and restarts CLEANLY after 3 seconds.
-            print(f" [-] RabbitMQ connection lost (Error: {e}). Reconnecting in 3 seconds...", flush=True)
+            print(f" [-] Connection dropped (Error: {e}). Retrying in 3 seconds...", flush=True)
             await asyncio.sleep(3)
 
 @asynccontextmanager
@@ -48,24 +73,47 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ========================================================
+# 3. REST API ENDPOINT: FETCH HISTORICAL ANOMALIES
+# ========================================================
+@app.get("/api/anomalies")
+def get_historical_anomalies(symbol: str, date: str, start_time: str, end_time: str):
+    # Parse query parameters into database timestamp boundaries
+    start_datetime = f"{date} {start_time}:00"
+    end_datetime = f"{date} {end_time}:59"
+    
+    # Execute SQL Query: Filter logs by selected asset symbol and target time slice
+    cursor.execute('''
+        SELECT symbol, price, timestamp 
+        FROM anomalies 
+        WHERE symbol=? AND timestamp >= ? AND timestamp <= ? 
+        ORDER BY timestamp DESC
+    ''', (symbol, start_datetime, end_datetime))
+    
+    rows = cursor.fetchall()
+    
+    # Serialize query records into a clean JSON array structure for front-end ingestion
+    results = [{"symbol": r[0], "price": r[1], "timestamp": r[2]} for r in rows]
+    return results
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
-    print(f" [+] Browser connected! Active clients: {len(connected_clients)}", flush=True)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        # INTERVENTION 3: Prevented "unexpected EOF" errors when the browser refreshes the page.
         connected_clients.discard(websocket)
-        print(" [-] Browser disconnected or page refreshed.", flush=True)
-    except Exception:
-        connected_clients.discard(websocket)
-        print(" [-] Browser network error.", flush=True)
 
 if __name__ == "__main__":
     import uvicorn
-    print(" [*] Web Server is starting... Port: 8000", flush=True)
-    # INTERVENTION 4: Extended ping interval to prevent WebSocket disconnections with the browser.
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_interval=60, ws_ping_timeout=60)
